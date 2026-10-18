@@ -1,0 +1,54 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.2", "8.3", "8.4"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer
+
+      # The SDK is a sibling checkout in development and a path repository in composer.json, so
+      # CI has to put it there. A released version would drop both lines.
+      - name: Check out the SDK beside this one
+        uses: actions/checkout@v4
+        with:
+          repository: sailantis/volucer-php-sdk
+          path: ../volucer-php-sdk
+
+      - run: composer install --no-interaction --no-progress
+
+      - run: composer test
+
+      # The end-to-end suite drives a real server. VOLUCER_E2E=1 is what makes it fail rather
+      # than skip, which is the convention the server's own suites use.
+      - name: Check out the server
+        if: matrix.php == '8.3'
+        uses: actions/checkout@v4
+        with:
+          repository: sailantis/volucer
+          path: volucer
+
+      - name: Build the server
+        if: matrix.php == '8.3'
+        run: cargo build --manifest-path volucer/Cargo.toml
+
+      - name: End-to-end against the real server
+        if: matrix.php == '8.3'
+        run: |
+          VOLUCER_BIN="$PWD/volucer/target/debug/volucer" \
+          VOLUCER_E2E=1 \
+          composer test
