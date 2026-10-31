@@ -58,8 +58,10 @@ final class EndToEndTest extends TestCase
 
         $config = $this->root . '/volucer.toml';
         file_put_contents($config, implode("\n", [
-            'default_backend = "symfony"',
             '[server]',
+            // volucer 0.3.0 moved `default_backend` into the `[server]` table; the top-level key
+            // is no longer read, and a config that still uses it is refused at startup.
+            'default_backend = "symfony"',
             'http = "127.0.0.1:' . $this->port . '"',
             'document_root = "' . str_replace('\\', '/', $this->root) . '"',
             'front_controller = "app.php"',

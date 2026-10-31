@@ -35,6 +35,8 @@ final class RequestFactoryTest extends TestCase
             scriptFilename: $overrides['scriptFilename'] ?? '/srv/app/public/index.php',
             https: $overrides['https'] ?? false,
             body: $overrides['body'] ?? '',
+            post: $overrides['post'] ?? [],
+            files: $overrides['files'] ?? [],
         );
     }
 
@@ -197,5 +199,91 @@ final class RequestFactoryTest extends TestCase
 
         $trusted = $this->factory->create($request, ['10.1.2.3']);
         self::assertSame('203.0.113.9', $trusted->getClientIp());
+    }
+
+    /**
+     * A multipart upload reaches `$request->files`, `$request->request`, and is usable.
+     *
+     * "Usable" is the point. `UploadedFile::isValid()` calls `is_uploaded_file()` unless the
+     * object was built with `test = true`, and that function returns false for anything a worker
+     * wrote — PHP keeps the answer in a SAPI-internal hash nothing can add to. Without the flag,
+     * every upload is present and every `move()` throws, which is the kind of failure that is
+     * only found in production.
+     */
+    public function test_a_multipart_upload_reaches_the_request_and_can_be_moved(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'svup');
+        self::assertIsString($path);
+        file_put_contents($path, 'FILEBYTES');
+
+        $request = self::request([
+            'method' => 'POST',
+            'uri' => '/upload',
+            'headers' => ['Content-Type' => 'multipart/form-data; boundary=X'],
+            'body' => "--X\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nA title\r\n"
+                . "--X\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"a.txt\"\r\n"
+                . "Content-Type: text/plain\r\n\r\nFILEBYTES\r\n--X--\r\n",
+            'post' => ['title' => 'A title'],
+            'files' => ['doc' => [
+                'name' => 'a.txt',
+                'full_path' => 'a.txt',
+                'type' => 'text/plain',
+                'tmp_name' => $path,
+                'error' => UPLOAD_ERR_OK,
+                'size' => 9,
+            ]],
+        ]);
+
+        $symfony = $this->factory->create($request);
+
+        self::assertSame(['title' => 'A title'], $symfony->request->all(), 'the text field reaches $request->request');
+        self::assertTrue($symfony->files->has('doc'), 'the upload reaches $request->files');
+
+        $file = $symfony->files->get('doc');
+        self::assertSame('a.txt', $file->getClientOriginalName());
+        self::assertTrue($file->isValid(), 'isValid() is true for a worker upload');
+
+        $destination = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'svup-moved-' . bin2hex(random_bytes(6));
+        $file->move(dirname($destination), basename($destination));
+        self::assertSame('FILEBYTES', file_get_contents($destination), 'move() stores the client bytes');
+
+        @unlink($destination);
+        @unlink($path);
+    }
+
+    /**
+     * A bracketed upload field keeps `$_FILES`' transposed nesting.
+     */
+    public function test_a_bracketed_upload_field_is_nested_like_php(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'svup');
+        self::assertIsString($path);
+        file_put_contents($path, 'BYE');
+
+        $request = self::request([
+            'method' => 'POST',
+            'uri' => '/upload',
+            'headers' => ['Content-Type' => 'multipart/form-data; boundary=X'],
+            'body' => '',
+            'post' => [],
+            'files' => ['a' => [
+                'name' => ['b' => 'y.txt'],
+                'full_path' => ['b' => 'y.txt'],
+                'type' => ['b' => 'text/plain'],
+                'tmp_name' => ['b' => $path],
+                'error' => ['b' => UPLOAD_ERR_OK],
+                'size' => ['b' => 3],
+            ]],
+        ]);
+
+        $files = $this->factory->create($request)->files;
+
+        self::assertTrue($files->has('a'), 'the outer field key is the field name');
+        $nested = $files->get('a');
+        self::assertIsArray($nested);
+        self::assertArrayHasKey('b', $nested);
+        self::assertSame('y.txt', $nested['b']->getClientOriginalName());
+
+        @unlink($path);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Sailantis\SymfonyVolucer;
 
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Volucer\Request as VolucerRequest;
@@ -93,7 +94,7 @@ final class RequestFactory
             $request->method,
             [],
             self::parseCookies($request->header('Cookie') ?? ''),
-            [],
+            self::uploadedFiles($request),
             $server,
             $request->body,
         );
@@ -112,14 +113,82 @@ final class RequestFactory
     }
 
     /**
+     * The uploaded files, as `UploadedFile` objects Symfony will accept.
+     *
+     * Built here rather than handed to `FileBag` as a raw `$_FILES` array because of one flag:
+     * `UploadedFile::isValid()` calls `is_uploaded_file()` unless the object was constructed
+     * with `$test = true`, and `is_uploaded_file()` returns false for any file a worker wrote —
+     * PHP keeps that answer in a SAPI-internal hash nothing can add to. `FileBag` always passes
+     * `false`, so a raw array yields files whose `isValid()` is false and whose `move()` throws.
+     *
+     * `$test = true` is what Symfony's own test client uses for exactly this situation. The
+     * consequence is stated rather than hidden: `isValid()` no longer establishes that the file
+     * came from an upload, so an application that relies on that must call
+     * `Volucer\Uploads::move()`, which behaves the same in both modes.
+     *
+     * @return array<string, mixed>
+     */
+    private static function uploadedFiles(VolucerRequest $request): array
+    {
+        $files = $request->files();
+        if ($files === []) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($files as $field => $entry) {
+            $out[$field] = self::asTestFile($entry);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Rebuild one `$_FILES` entry as `UploadedFile` objects, in `FileBag`'s expected shape.
+     *
+     * `$_FILES` is transposed — `name="a[b]"` produces `$_FILES['a']['name']['b']` — and
+     * `FileBag::convertFileInformation` reassembles that, keyed by `name`. So each leaf key is
+     * walked and its `name` sub-tree is used to build the objects, which is the same order
+     * `FileBag` itself uses.
+     *
+     * @param mixed $entry
+     * @return mixed
+     */
+    private static function asTestFile($entry)
+    {
+        if (!is_array($entry)) {
+            return $entry;
+        }
+
+        if (isset($entry['tmp_name'], $entry['name'], $entry['error'], $entry['size'])
+            && !is_array($entry['tmp_name'])) {
+            /** @var string $tmp */
+            $tmp = (string) $entry['tmp_name'];
+            /** @var string $name */
+            $name = (string) $entry['name'];
+            /** @var string $type */
+            $type = (string) ($entry['type'] ?? '');
+            /** @var int $error */
+            $error = (int) $entry['error'];
+
+            return new UploadedFile($tmp, $name, $type, $error, true);
+        }
+
+        $out = [];
+        foreach ($entry as $key => $value) {
+            $out[$key] = self::asTestFile($value);
+        }
+
+        return $out;
+    }
+
+    /**
      * Populate `$request->request` from the body.
      *
-     * Only `application/x-www-form-urlencoded` is parsed. `multipart/form-data` is deliberately
-     * **not**: the server has already consumed the request, so the boundary is the only thing
-     * that could be parsed from, and a half-parsed upload is worse than an empty one — the
-     * application sees no files rather than a truncated set. A worker deployment that needs
-     * uploads either uses `upstream` or reads `php://input` itself, and both are legible
-     * choices; silently inventing `$_FILES` entries from a body nobody parsed is not.
+     * Only `application/x-www-form-urlencoded` is parsed here. `multipart/form-data` is handled
+     * before this, by {@see RequestFactory::uploadedFiles()}, because its values come from the
+     * SDK's parser rather than from the raw string — the SDK streamed each file part to disk, so
+     * re-parsing `$request->body` here would write every upload a second time.
      */
     private static function parseBody(SymfonyRequest $symfony, VolucerRequest $request): void
     {
@@ -131,6 +200,14 @@ final class RequestFactory
 
         if ($contentType === 'application/x-www-form-urlencoded') {
             $symfony->request->replace(self::parseUrlEncoded($request->body));
+
+            return;
+        }
+
+        if ($contentType === 'multipart/form-data') {
+            // The text fields of a multipart form are already in the request's `post` array, so
+            // they are copied rather than parsed.
+            $symfony->request->replace($request->post());
         }
     }
 
