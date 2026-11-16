@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d2203d01c563481be83eff4033e1bf24",
+    "content-hash": "fad604bba10937e661773b8a3c57fda8",
     "packages": [
         {
             "name": "psr/container",
@@ -161,11 +161,11 @@
         },
         {
             "name": "sailantis/volucer-worker",
-            "version": "dev-main",
+            "version": "0.4.2",
             "dist": {
                 "type": "path",
                 "url": "../volucer-php-sdk",
-                "reference": "bd4a4cd54ba2466e4a7cc54ec261ec724e024a79"
+                "reference": "757f156d1fe7c273eeab1a7b84e52e4e5288c5c1"
             },
             "require": {
                 "ext-hash": "*",
@@ -175,7 +175,7 @@
             "type": "library",
             "extra": {
                 "branch-alias": {
-                    "dev-main": "0.1.x-dev"
+                    "dev-main": "0.4.x-dev"
                 }
             },
             "autoload": {
@@ -3209,9 +3209,7 @@
     ],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": {
-        "sailantis/volucer-worker": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

@@ -22,11 +22,13 @@ jobs:
           tools: composer
 
       # The SDK is a sibling checkout in development and a path repository in composer.json, so
-      # CI has to put it there. A released version would drop both lines.
+      # CI has to put it there. The ref is the version `composer.json` requires, so CI tests the
+      # release a consumer would install rather than whatever `main` happens to be.
       - name: Check out the SDK beside this one
         uses: actions/checkout@v4
         with:
           repository: sailantis/volucer-php-sdk
+          ref: v0.4.2
           path: ../volucer-php-sdk
 
       - run: composer install --no-interaction --no-progress

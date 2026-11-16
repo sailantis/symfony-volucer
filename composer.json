@@ -3,9 +3,10 @@
     "description": "Run a Symfony application on volucer's persistent worker protocol: kernel reboot per request, no upstream changes.",
     "type": "symfony-bundle",
     "license": "MIT",
+    "keywords": ["volucer", "symfony", "worker", "application-server", "php-fpm"],
     "require": {
         "php": ">=8.2",
-        "sailantis/volucer-worker": "dev-main",
+        "sailantis/volucer-worker": "^0.4.2",
         "symfony/config": "^7.1",
         "symfony/dependency-injection": "^7.1",
         "symfony/http-foundation": "^7.1",
@@ -18,7 +19,10 @@
     "repositories": [
         {
             "type": "path",
-            "url": "../volucer-php-sdk"
+            "url": "../volucer-php-sdk",
+            "options": {
+                "versions": { "sailantis/volucer-worker": "0.4.2" }
+            }
         }
     ],
     "minimum-stability": "dev",
@@ -46,9 +50,13 @@
     "scripts": {
         "test": "phpunit"
     },
+    "support": {
+        "issues": "https://github.com/sailantis/symfony-volucer/issues",
+        "source": "https://github.com/sailantis/symfony-volucer"
+    },
     "extra": {
         "branch-alias": {
-            "dev-main": "0.1.x-dev"
+            "dev-main": "0.4.x-dev"
         }
     }
 }
